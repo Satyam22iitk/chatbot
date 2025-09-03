@@ -7,7 +7,7 @@ from backend import GroqChatClient, basic_reply, DocumentChat
 load_dotenv()
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
 st.set_page_config(page_title="Groq Chatbot", layout="centered")
 st.title("📚 Groq Chatbot — 3 Modes")
