@@ -1,4 +1,3 @@
-!pip install pdfplumber
 import os
 from groq import Groq
 import numpy as np
@@ -6,9 +5,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from PyPDF2 import PdfReader
 from io import BytesIO
-import pdfplumber  # for better text extraction
 
-
+# --------- Basic chatbot (rule-based) ---------
 def basic_reply(text: str) -> str:
     """Super-simple local chatbot to avoid any API calls."""
     t = (text or "").lower()
@@ -21,12 +19,17 @@ def basic_reply(text: str) -> str:
     return "Sorry, I only know a few canned replies. Try the Groq-powered mode for better answers."
 
 
+# --------- Groq client wrapper ---------
 class GroqChatClient:
-    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
+    def __init__(self, api_key: str, model: str = "llama3-8b-8192"):
         self.client = Groq(api_key=api_key)
         self.model = model
 
     def chat(self, messages: list) -> str:
+        """
+        messages: list[{'role': 'system'|'user'|'assistant', 'content': str}]
+        Returns assistant text.
+        """
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages
@@ -34,8 +37,12 @@ class GroqChatClient:
         return resp.choices[0].message.content
 
 
+# --------- PDF RAG (TF-IDF) + Groq ---------
 class DocumentChat:
-    """Extracts text from PDFs, chunks it, TF-IDF retrieves relevant pieces, then asks the Groq model."""
+    """
+    Extracts text from PDFs, chunks it, TF-IDF retrieves relevant pieces,
+    then asks the Groq model with the retrieved context.
+    """
 
     def __init__(self, groq_client: GroqChatClient | None = None, chunk_size: int = 1000):
         self.groq_client = groq_client
@@ -45,30 +52,19 @@ class DocumentChat:
         self._matrix = None
 
     def add_pdf(self, file_like):
-        """Read text from a PDF (works for Streamlit's UploadedFile)."""
+        """
+        file_like: a stream-like object (e.g., Streamlit UploadedFile)
+        """
         content = file_like.read()
         reader = PdfReader(BytesIO(content))
         texts = []
-
-        # Try PyPDF2 first
         for page in reader.pages:
             try:
                 t = page.extract_text() or ""
             except Exception:
                 t = ""
             texts.append(t)
-
-        full_text = "\n".join(texts).strip()
-
-        # If PyPDF2 fails, try pdfplumber
-        if not full_text:
-            with pdfplumber.open(BytesIO(content)) as pdf:
-                texts = [page.extract_text() or "" for page in pdf.pages]
-            full_text = "\n".join(texts).strip()
-
-        if not full_text:
-            full_text = "[Could not extract any text from this PDF]"
-
+        full_text = "\n".join(texts)
         self._chunk_and_store(full_text)
 
     def _chunk_and_store(self, text: str):
@@ -78,6 +74,7 @@ class DocumentChat:
             if chunk:
                 self.chunks.append(chunk)
 
+        # build / rebuild vectorizer & matrix
         if self.chunks:
             self.vectorizer = TfidfVectorizer(stop_words="english").fit(self.chunks)
             self._matrix = self.vectorizer.transform(self.chunks)
@@ -91,11 +88,9 @@ class DocumentChat:
         return []
 
     def ask(self, question: str) -> str:
+        # Retrieve top chunks
         context_chunks = self._retrieve(question, top_k=4)
         context = "\n\n".join(context_chunks)
-
-        if not context:
-            return "No relevant content found in the uploaded PDFs."
 
         system_prompt = (
             "You are a helpful assistant. Use the provided document snippets to "
@@ -107,6 +102,10 @@ class DocumentChat:
         ]
 
         if self.groq_client is None:
-            return "[Local fallback] I found these document snippets:\n\n" + context[:2000]
+            # Local safety fallback
+            if context:
+                return "[Local fallback] I found these document snippets:\n\n" + context[:2000]
+            return "[Local fallback] No Groq client configured and no documents found."
 
+        # Call Groq
         return self.groq_client.chat(messages)
