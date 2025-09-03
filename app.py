@@ -102,7 +102,7 @@ def basic_chatbot(prompt):
 def context_aware_chatbot(prompt, conversation_history):
     full_prompt = f"Conversation history:\n{conversation_history}\n\nUser: {prompt}\nAssistant:"
     
-    API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large"
+    API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
     headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
     
     def query(payload):
