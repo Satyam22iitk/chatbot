@@ -88,28 +88,35 @@ def process_pdf(pdf_files):
         return False
 
 # Generic chatbot function using HuggingFaceHub
-def huggingface_hub_chatbot(prompt, conversation_history=None):
+def huggingface_api_chatbot(prompt, conversation_history=None):
     try:
-        llm = HuggingFaceHub(
-            repo_id=st.session_state.model_name,
-            model_kwargs={
-                "temperature": 0.7,
-                "max_new_tokens": 512,
-                "do_sample": True
-            },
-            huggingfacehub_api_token=st.session_state.api_key,
-            raw_response=True   # ✅ important
-        )
+        API_URL = f"https://api-inference.huggingface.co/models/{st.session_state.model_name}"
+        headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
 
         if conversation_history:
             full_prompt = f"Conversation history:\n{conversation_history}\n\nUser: {prompt}\nAssistant:"
         else:
             full_prompt = prompt
 
-        response = llm(full_prompt)
-        return response.text if hasattr(response, "text") else str(response)
+        payload = {"inputs": full_prompt}
+        response = requests.post(API_URL, headers=headers, json=payload)
+
+        if response.status_code != 200:
+            return f"HF API Error {response.status_code}: {response.text[:200]}"
+
+        try:
+            data = response.json()
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get("generated_text", "No response generated.")
+            elif isinstance(data, dict):
+                return data.get("generated_text", "No response generated.")
+            else:
+                return str(data)
+        except Exception:
+            return response.text[:500]  # fallback if plain text
     except Exception as e:
         return f"Error generating response: {str(e)}"
+
 
 
 # PDF chatbot function
