@@ -31,10 +31,12 @@ if mode == "Chatbot with documents (PDF)":
     uploaded_files = st.file_uploader(
         "Upload PDF(s)", type=["pdf"], accept_multiple_files=True
     )
-    if uploaded_files and st.session_state.docchat is None:
+    if uploaded_files:
         st.session_state.docchat = DocumentChat(groq_client=groq_client)
         for pf in uploaded_files:
+            pf.seek(0)  # reset pointer
             st.session_state.docchat.add_pdf(pf)
+
 
 # Show chat history
 if st.session_state.history:
