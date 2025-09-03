@@ -1,5 +1,3 @@
-pip install pdfplumber
-
 import os
 from groq import Groq
 import numpy as np
