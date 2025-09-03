@@ -76,13 +76,21 @@ if send:
                 st.warning("Please upload at least one PDF file for this mode.")
             else:
                 docchat = DocumentChat(groq_client=groq_client)
+        
+                # Save uploaded files temporarily
+                import tempfile
                 for pf in uploaded_files:
-                    docchat.add_pdf(pf)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                        tmp_file.write(pf.read())
+                        tmp_path = tmp_file.name
+                    docchat.add_pdf(tmp_path)
+        
                 try:
                     answer = docchat.ask(user_input)
                     st.session_state.history.append(("assistant", answer))
                 except Exception as e:
                     st.session_state.history.append(("assistant", f"[Error] {e}"))
+
 
         # Clear input and refresh UI
         st.session_state.input_counter = 0
