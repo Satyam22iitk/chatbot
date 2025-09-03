@@ -22,8 +22,8 @@ def initialize_groq_client():
     
     if api_key:
         try:
-            # Fixed initialization - no proxies parameter
-            return groq.Groq(api_key=api_key)
+            # Correct initialization for the Groq client
+            return groq.Client(api_key=api_key)
         except Exception as e:
             st.error(f"Error initializing Groq client: {e}")
             return None
@@ -46,13 +46,13 @@ def extract_text_from_pdf(pdf_file):
 # Basic chatbot function
 def basic_chatbot(client, prompt):
     try:
-        chat_completion = client.chat.completions.create(
+        response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",  # Using a simpler, faster model
+            model="llama-3.1-8b-instant",
             max_tokens=150,
             temperature=0.7
         )
-        return chat_completion.choices[0].message.content
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -62,38 +62,46 @@ def context_aware_chatbot(client, prompt, chat_history):
         messages = [{"role": "system", "content": "You are a helpful assistant."}]
         
         # Add chat history to context
-        for message in chat_history:
+        for message in chat_history[-6:]:  # Keep only last 6 exchanges to avoid token limits
             messages.append({"role": "user", "content": message["user"]})
             messages.append({"role": "assistant", "content": message["assistant"]})
         
         # Add current prompt
         messages.append({"role": "user", "content": prompt})
         
-        chat_completion = client.chat.completions.create(
+        response = client.chat.completions.create(
             messages=messages,
             model="llama-3.1-8b-instant",
             max_tokens=150,
             temperature=0.7
         )
-        return chat_completion.choices[0].message.content
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
 # Document-aware chatbot function
 def document_aware_chatbot(client, prompt, document_text):
     try:
+        # Limit document text to avoid token limits
+        if len(document_text) > 3000:
+            document_text = document_text[:3000] + "... [document truncated]"
+        
         # Combine document text with prompt
         enhanced_prompt = f"Based on the following document:\n\n{document_text}\n\nAnswer this question: {prompt}"
         
-        chat_completion = client.chat.completions.create(
+        response = client.chat.completions.create(
             messages=[{"role": "user", "content": enhanced_prompt}],
             model="llama-3.1-8b-instant",
             max_tokens=200,
             temperature=0.7
         )
-        return chat_completion.choices[0].message.content
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
+
+# Clear chat history
+def clear_chat():
+    st.session_state.chat_history = []
 
 # Main application
 def main():
@@ -115,6 +123,11 @@ def main():
         ["Basic Chatbot", "Context-Aware Chatbot", "Document Chatbot"]
     )
     st.session_state.mode = mode
+    
+    # Clear chat button
+    if st.sidebar.button("Clear Chat History"):
+        clear_chat()
+        st.sidebar.success("Chat history cleared!")
     
     # Initialize Groq client
     client = initialize_groq_client()
