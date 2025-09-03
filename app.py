@@ -90,27 +90,27 @@ def process_pdf(pdf_files):
 # Generic chatbot function using HuggingFaceHub
 def huggingface_hub_chatbot(prompt, conversation_history=None):
     try:
-        # Initialize the model
         llm = HuggingFaceHub(
             repo_id=st.session_state.model_name,
             model_kwargs={
                 "temperature": 0.7,
-                "max_length": 512,
+                "max_new_tokens": 512,
                 "do_sample": True
-            }
+            },
+            huggingfacehub_api_token=st.session_state.api_key,
+            raw_response=True   # ✅ important
         )
-        
-        # Format the prompt with conversation history if provided
+
         if conversation_history:
             full_prompt = f"Conversation history:\n{conversation_history}\n\nUser: {prompt}\nAssistant:"
         else:
             full_prompt = prompt
-            
-        # Generate response
+
         response = llm(full_prompt)
-        return response
+        return response.text if hasattr(response, "text") else str(response)
     except Exception as e:
         return f"Error generating response: {str(e)}"
+
 
 # PDF chatbot function
 def pdf_chatbot(prompt):
