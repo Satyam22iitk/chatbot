@@ -7,7 +7,7 @@ from backend import GroqChatClient, basic_reply, DocumentChat
 load_dotenv()
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
 st.set_page_config(page_title="Groq Chatbot", layout="centered")
 st.title("📚 Groq Chatbot — 3 Modes")
@@ -41,7 +41,7 @@ if st.session_state.history:
             st.markdown(f"**Bot:** {msg}")
 
 # Input area
-user_input = st.text_input("Your message", key="input")
+user_input = st.text_input("Your message", key="user_message")
 
 send = st.button("Send")
 if send:
@@ -58,7 +58,6 @@ if send:
             if not groq_client:
                 st.error("GROQ_API_KEY not set in environment. See .env.example")
             else:
-                # Build message list from session history (simple trim to last 12 turns)
                 messages = [{"role": "system", "content": "You are a helpful assistant."}]
                 for r, m in st.session_state.history[-12:]:
                     role = "user" if r == "user" else "assistant"
@@ -83,6 +82,5 @@ if send:
                 except Exception as e:
                     st.session_state.history.append(("assistant", f"[Error] {e}"))
 
-        # Clear input and refresh UI
-        st.session_state.input = ""
+        # Refresh UI
         st.rerun()
