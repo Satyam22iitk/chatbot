@@ -85,5 +85,5 @@ if send:
                     st.session_state.history.append(("assistant", f"[Error] {e}"))
 
         # Clear input and refresh UI
-        st.session_state.user_message = ""
+        st.session_state.input_counter += 1
         st.rerun()
