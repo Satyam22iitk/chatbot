@@ -22,7 +22,8 @@ def initialize_groq_client():
     
     if api_key:
         try:
-            return groq.Client(api_key=api_key)
+            # Fixed initialization - no proxies parameter
+            return groq.Groq(api_key=api_key)
         except Exception as e:
             st.error(f"Error initializing Groq client: {e}")
             return None
