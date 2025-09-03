@@ -41,7 +41,8 @@ if st.session_state.history:
             st.markdown(f"**Bot:** {msg}")
 
 # Input area
-user_input = st.text_input("Your message", key="input")
+# Input area
+user_input = st.text_input("Your message", key="user_message")
 
 send = st.button("Send")
 if send:
@@ -84,5 +85,5 @@ if send:
                     st.session_state.history.append(("assistant", f"[Error] {e}"))
 
         # Clear input and refresh UI
-        st.session_state.input = ""
+        st.session_state.user_message = ""
         st.rerun()
