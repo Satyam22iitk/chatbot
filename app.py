@@ -187,6 +187,28 @@ def main():
             "user": prompt,
             "assistant": response
         })
+import requests
+import json
+
+def groq_api_call(api_key, messages, model="llama-3.1-8b-instant", max_tokens=150):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messages": messages,
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 if __name__ == "__main__":
     main()
