@@ -2,28 +2,28 @@ import os
 
 
 if "history" not in st.session_state:
-st.session_state.history = [] # list of (role, text)
+    st.session_state.history = [] # list of (role, text)
 
 
 # Initialize Groq client only when needed
 groq_client = None
 if mode != "Basic chatbot" and GROQ_API_KEY:
-groq_client = GroqChatClient(api_key=GROQ_API_KEY, model=GROQ_MODEL)
+    groq_client = GroqChatClient(api_key=GROQ_API_KEY, model=GROQ_MODEL)
 
 
 # File uploader for PDF mode
 uploaded_files = None
 if mode == "Chatbot with documents (PDF)":
-uploaded_files = st.file_uploader("Upload PDF(s)", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload PDF(s)", type=["pdf"], accept_multiple_files=True)
 
 
 # Display history
 if st.session_state.history:
-for role, msg in st.session_state.history:
-if role == "user":
-st.markdown(f"**You:** {msg}")
-else:
-st.markdown(f"**Bot:** {msg}")
+    for role, msg in st.session_state.history:
+        if role == "user":
+            st.markdown(f"**You:** {msg}")
+        else:
+            st.markdown(f"**Bot:** {msg}")
 
 
 # Input area
@@ -31,52 +31,52 @@ user_input = st.text_input("Your message", key="input")
 
 
 if st.button("Send") or (user_input and st.session_state.get("auto_send")):
-if not user_input:
-st.warning("Please type a message.")
-else:
-st.session_state.history.append(("user", user_input))
+    if not user_input:
+        st.warning("Please type a message.")
+    else:
+        st.session_state.history.append(("user", user_input))
 
 
-if mode == "Basic chatbot":
-reply = basic_reply(user_input)
-st.session_state.history.append(("assistant", reply))
+        if mode == "Basic chatbot":
+            reply = basic_reply(user_input)
+            st.session_state.history.append(("assistant", reply))
 
 
-elif mode == "Chatbot aware (Groq)":
-if not groq_client:
-st.error("GROQ_API_KEY not set in environment. See .env.example")
-else:
-# Build message list from session history (simple trim to last 12 turns)
-messages = []
-# add a system prompt for helpfulness
-messages.append({"role": "system", "content": "You are a helpful assistant."})
-for r, m in st.session_state.history[-12:]:
-role = "user" if r == "user" else "assistant"
-messages.append({"role": role, "content": m})
+        elif mode == "Chatbot aware (Groq)":
+            if not groq_client:
+                st.error("GROQ_API_KEY not set in environment. See .env.example")
+            else:
+                # Build message list from session history (simple trim to last 12 turns)
+                messages = []
+                # add a system prompt for helpfulness
+                messages.append({"role": "system", "content": "You are a helpful assistant."})
+                for r, m in st.session_state.history[-12:]:
+                    role = "user" if r == "user" else "assistant"
+                    messages.append({"role": role, "content": m})
 
 
-try:
-resp = groq_client.chat(messages)
-st.session_state.history.append(("assistant", resp))
-except Exception as e:
-st.session_state.history.append(("assistant", f"[Error calling Groq] {e}"))
+                try:
+                    resp = groq_client.chat(messages)
+                    st.session_state.history.append(("assistant", resp))
+                except Exception as e:
+                    st.session_state.history.append(("assistant", f"[Error calling Groq] {e}"))
 
 
-elif mode == "Chatbot with documents (PDF)":
-if not uploaded_files:
-st.warning("Please upload at least one PDF file for this mode.")
-else:
-# Create DocumentChat instance and ask
-docchat = DocumentChat(groq_client=groq_client)
-for pf in uploaded_files:
-docchat.add_pdf(pf)
-try:
-answer = docchat.ask(user_input)
-st.session_state.history.append(("assistant", answer))
-except Exception as e:
-st.session_state.history.append(("assistant", f"[Error] {e}"))
+        elif mode == "Chatbot with documents (PDF)":
+            if not uploaded_files:
+                st.warning("Please upload at least one PDF file for this mode.")
+            else:
+                # Create DocumentChat instance and ask
+                docchat = DocumentChat(groq_client=groq_client)
+                for pf in uploaded_files:
+                    docchat.add_pdf(pf)
+                try:
+                    answer = docchat.ask(user_input)
+                    st.session_state.history.append(("assistant", answer))
+                except Exception as e:
+                    st.session_state.history.append(("assistant", f"[Error] {e}"))
 
 
-# clear input
-st.session_state.input = ""
-st.experimental_rerun()
+        # clear input
+        st.session_state.input = ""
+        st.experimental_rerun()
