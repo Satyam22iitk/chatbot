@@ -41,7 +41,6 @@ if st.session_state.history:
             st.markdown(f"**Bot:** {msg}")
 
 # Input area
-# Input area
 user_input = st.text_input("Your message", key="user_message")
 
 send = st.button("Send")
@@ -59,7 +58,6 @@ if send:
             if not groq_client:
                 st.error("GROQ_API_KEY not set in environment. See .env.example")
             else:
-                # Build message list from session history (simple trim to last 12 turns)
                 messages = [{"role": "system", "content": "You are a helpful assistant."}]
                 for r, m in st.session_state.history[-12:]:
                     role = "user" if r == "user" else "assistant"
@@ -84,7 +82,5 @@ if send:
                 except Exception as e:
                     st.session_state.history.append(("assistant", f"[Error] {e}"))
 
-
-        # Clear input and refresh UI
-        st.session_state.input_counter = 0
+        # Refresh UI
         st.rerun()
