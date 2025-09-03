@@ -21,7 +21,7 @@ def basic_reply(text: str) -> str:
 
 # --------- Groq client wrapper ---------
 class GroqChatClient:
-    def __init__(self, api_key: str, model: str = "llama3-8b-8192"):
+    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
         self.client = Groq(api_key=api_key)
         self.model = model
 
@@ -55,6 +55,7 @@ class DocumentChat:
         """
         file_like: a stream-like object (e.g., Streamlit UploadedFile)
         """
+        # Streamlit's UploadedFile can be read directly
         content = file_like.read()
         reader = PdfReader(BytesIO(content))
         texts = []
@@ -92,6 +93,9 @@ class DocumentChat:
         context_chunks = self._retrieve(question, top_k=4)
         context = "\n\n".join(context_chunks)
 
+        if not context:
+            return "No relevant content found in the uploaded PDFs."
+
         system_prompt = (
             "You are a helpful assistant. Use the provided document snippets to "
             "answer the user's question. If the answer is not in the snippets, say you don't know."
@@ -103,9 +107,7 @@ class DocumentChat:
 
         if self.groq_client is None:
             # Local safety fallback
-            if context:
-                return "[Local fallback] I found these document snippets:\n\n" + context[:2000]
-            return "[Local fallback] No Groq client configured and no documents found."
+            return "[Local fallback] I found these document snippets:\n\n" + context[:2000]
 
         # Call Groq
         return self.groq_client.chat(messages)
