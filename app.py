@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import requests
-import json
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -9,8 +8,11 @@ from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.llms import HuggingFaceHub
-import tempfile
-from pathlib import Path
+from dotenv import load_dotenv
+import json
+
+# Load environment variables
+load_dotenv()
 
 # Set page configuration
 st.set_page_config(
@@ -20,27 +22,18 @@ st.set_page_config(
 )
 
 # Initialize session state variables
-def init_session_state():
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "pdf_processed" not in st.session_state:
-        st.session_state.pdf_processed = False
-    if "conversation_chain" not in st.session_state:
-        st.session_state.conversation_chain = None
-    if "api_key" not in st.session_state:
-        st.session_state.api_key = ""
-    if "feature" not in st.session_state:
-        st.session_state.feature = "basic"
-    if "conversation_history" not in st.session_state:
-        st.session_state.conversation_history = ""
-    if "available_models" not in st.session_state:
-        st.session_state.available_models = {
-            "Basic Chatbot": "google/flan-t5-base",
-            "Context-Aware Chatbot": "microsoft/DialoGPT-medium",
-            "PDF Document Chatbot": "google/flan-t5-base"
-        }
-
-init_session_state()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "pdf_processed" not in st.session_state:
+    st.session_state.pdf_processed = False
+if "conversation_chain" not in st.session_state:
+    st.session_state.conversation_chain = None
+if "api_key" not in st.session_state:
+    st.session_state.api_key = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
+if "feature" not in st.session_state:
+    st.session_state.feature = "basic"
+if "model_name" not in st.session_state:
+    st.session_state.model_name = "google/flan-t5-xxl"
 
 # Set Hugging Face API key
 def set_api_key():
@@ -48,44 +41,29 @@ def set_api_key():
         st.session_state.api_key = st.session_state.api_key_input
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = st.session_state.api_key
         st.success("API key set successfully!")
-        
-        # Test the API key
-        test_api_key()
-
-# Test the API key
-def test_api_key():
-    try:
-        headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
-        response = requests.get("https://huggingface.co/api/models", headers=headers)
-        if response.status_code == 200:
-            st.sidebar.success("API key is valid!")
-        else:
-            st.sidebar.error(f"API key validation failed: {response.status_code}")
-    except Exception as e:
-        st.sidebar.error(f"Error testing API key: {str(e)}")
 
 # Process uploaded PDF files
 def process_pdf(pdf_files):
+    text = ""
+    for pdf_file in pdf_files:
+        pdf_reader = PdfReader(pdf_file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""  # Handle None return
+    
+    if not text.strip():
+        st.error("No text could be extracted from the PDF(s).")
+        return False
+    
+    # Split text into chunks
+    text_splitter = CharacterTextSplitter(
+        separator="\n",
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len
+    )
+    chunks = text_splitter.split_text(text)
+    
     try:
-        text = ""
-        for pdf_file in pdf_files:
-            pdf_reader = PdfReader(pdf_file)
-            for page in pdf_reader.pages:
-                text += page.extract_text() or ""
-        
-        if not text.strip():
-            st.error("No text could be extracted from the PDF files. Please try different files.")
-            return False
-        
-        # Split text into chunks
-        text_splitter = CharacterTextSplitter(
-            separator="\n",
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len
-        )
-        chunks = text_splitter.split_text(text)
-        
         # Create embeddings
         embeddings = HuggingFaceEmbeddings()
         
@@ -94,9 +72,8 @@ def process_pdf(pdf_files):
         
         # Create conversation chain
         llm = HuggingFaceHub(
-            repo_id=st.session_state.available_models["PDF Document Chatbot"],
-            model_kwargs={"temperature": 0.5, "max_length": 512},
-            huggingfacehub_api_token=st.session_state.api_key
+            repo_id=st.session_state.model_name,
+            model_kwargs={"temperature": 0.5, "max_length": 512}
         )
         memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)
         st.session_state.conversation_chain = ConversationalRetrievalChain.from_llm(
@@ -110,108 +87,73 @@ def process_pdf(pdf_files):
         st.error(f"Error processing PDF: {str(e)}")
         return False
 
+# Generic chatbot function for Hugging Face inference API
+def query_huggingface_model(prompt, model_id, parameters=None):
+    API_URL = f"https://api-inference.huggingface.co/models/{model_id}"
+    headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
+    
+    payload = {"inputs": prompt}
+    if parameters:
+        payload["parameters"] = parameters
+    
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload)
+        response.raise_for_status()  # Raise exception for bad status codes
+        
+        result = response.json()
+        
+        # Handle different response formats from different models
+        if isinstance(result, list) and len(result) > 0:
+            if 'generated_text' in result[0]:
+                return result[0]['generated_text']
+            elif 'summary_text' in result[0]:
+                return result[0]['summary_text']
+            elif 'answer' in result[0]:
+                return result[0]['answer']
+            elif 'text' in result[0]:
+                return result[0]['text']
+        
+        # Handle conversational models
+        if isinstance(result, dict) and 'generated_text' in result:
+            return result['generated_text']
+            
+        # Fallback: try to extract text from any structure
+        return str(result)
+        
+    except requests.exceptions.RequestException as e:
+        return f"API request failed: {str(e)}"
+    except Exception as e:
+        return f"Error processing response: {str(e)}"
+
 # Basic chatbot function
 def basic_chatbot(prompt):
-    try:
-        model_name = st.session_state.available_models["Basic Chatbot"]
-        API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
-        headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
-        
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
-        
-        # Handle different response formats
-        if response.status_code == 200:
-            try:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    if 'generated_text' in result[0]:
-                        return result[0]['generated_text']
-                    else:
-                        return str(result[0])
-                elif isinstance(result, dict) and 'generated_text' in result:
-                    return result['generated_text']
-                else:
-                    return str(result)
-            except json.JSONDecodeError:
-                return response.text
-        elif response.status_code == 404:
-            return f"Model not found (404). Please try a different model in the settings."
-        else:
-            return f"Error: {response.status_code} - {response.text}"
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
+    return query_huggingface_model(
+        prompt, 
+        st.session_state.model_name,
+        {"max_length": 512, "temperature": 0.7}
+    )
 
 # Context-aware chatbot function
-def context_aware_chatbot(prompt):
-    try:
-        # Update conversation history
-        st.session_state.conversation_history += f"User: {prompt}\n"
-        
-        model_name = st.session_state.available_models["Context-Aware Chatbot"]
-        API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
-        headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
-        
-        # Use the conversation history as context
-        full_prompt = f"{st.session_state.conversation_history}Assistant:"
-        
-        response = requests.post(
-            API_URL, 
-            headers=headers, 
-            json={
-                "inputs": full_prompt,
-                "parameters": {
-                    "max_length": 1000,
-                    "temperature": 0.7,
-                    "do_sample": True
-                }
-            }
-        )
-        
-        if response.status_code == 200:
-            try:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    if 'generated_text' in result[0]:
-                        assistant_response = result[0]['generated_text']
-                    else:
-                        assistant_response = str(result[0])
-                elif isinstance(result, dict) and 'generated_text' in result:
-                    assistant_response = result['generated_text']
-                else:
-                    assistant_response = str(result)
-                
-                # Extract only the new response (remove the history)
-                if "Assistant:" in assistant_response:
-                    assistant_response = assistant_response.split("Assistant:")[-1].strip()
-                
-                # Update conversation history
-                st.session_state.conversation_history += f"Assistant: {assistant_response}\n"
-                
-                return assistant_response
-            except json.JSONDecodeError:
-                return response.text
-        elif response.status_code == 404:
-            return f"Model not found (404). Please try a different model in the settings."
-        else:
-            return f"Error: {response.status_code} - {response.text}"
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
+def context_aware_chatbot(prompt, conversation_history):
+    # Combine conversation history with new prompt
+    full_prompt = f"Conversation history:\n{conversation_history}\n\nUser: {prompt}\nAssistant:"
+    
+    return query_huggingface_model(
+        full_prompt,
+        st.session_state.model_name,
+        {"max_length": 1000, "temperature": 0.7, "do_sample": True}
+    )
 
 # PDF chatbot function
 def pdf_chatbot(prompt):
-    if not st.session_state.pdf_processed:
+    if st.session_state.conversation_chain:
+        try:
+            response = st.session_state.conversation_chain({"question": prompt})
+            return response["answer"]
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
+    else:
         return "PDF processing not completed. Please upload and process PDF files first."
-    
-    try:
-        response = st.session_state.conversation_chain({"question": prompt})
-        return response.get("answer", "No answer could be generated.")
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
-
-# Clear conversation history
-def clear_chat():
-    st.session_state.messages = []
-    st.session_state.conversation_history = ""
 
 # Main application
 def main():
@@ -225,36 +167,19 @@ def main():
         # API key input
         st.text_input(
             "Hugging Face API Key",
+            value=st.session_state.api_key,
             type="password",
             key="api_key_input",
-            help="Enter your Hugging Face API key to use the chatbot features",
-            value=st.session_state.api_key
+            help="Enter your Hugging Face API key to use the chatbot features"
         )
         st.button("Set API Key", on_click=set_api_key)
         
-        st.markdown("---")
-        
         # Model selection
-        st.subheader("Model Selection")
-        st.session_state.available_models["Basic Chatbot"] = st.text_input(
-            "Basic Chatbot Model",
-            value=st.session_state.available_models["Basic Chatbot"],
-            help="Enter the model ID for the basic chatbot (e.g., google/flan-t5-base)"
+        st.session_state.model_name = st.text_input(
+            "Hugging Face Model ID",
+            value=st.session_state.model_name,
+            help="Enter the model ID from Hugging Face (e.g., 'google/flan-t5-xxl')"
         )
-        
-        st.session_state.available_models["Context-Aware Chatbot"] = st.text_input(
-            "Context-Aware Chatbot Model",
-            value=st.session_state.available_models["Context-Aware Chatbot"],
-            help="Enter the model ID for the context-aware chatbot (e.g., microsoft/DialoGPT-medium)"
-        )
-        
-        st.session_state.available_models["PDF Document Chatbot"] = st.text_input(
-            "PDF Chatbot Model",
-            value=st.session_state.available_models["PDF Document Chatbot"],
-            help="Enter the model ID for the PDF chatbot (e.g., google/flan-t5-base)"
-        )
-        
-        st.markdown("---")
         
         # Feature selection
         st.session_state.feature = st.radio(
@@ -271,17 +196,10 @@ def main():
                 type="pdf",
                 accept_multiple_files=True
             )
-            if uploaded_files:
-                if st.button("Process PDFs"):
-                    with st.spinner("Processing PDFs..."):
-                        if process_pdf(uploaded_files):
-                            st.success("PDFs processed successfully!")
-            
-            if st.session_state.pdf_processed:
-                st.success("PDF documents are ready for questioning!")
-        
-        st.markdown("---")
-        st.button("Clear Chat History", on_click=clear_chat)
+            if uploaded_files and st.button("Process PDFs"):
+                with st.spinner("Processing PDFs..."):
+                    if process_pdf(uploaded_files):
+                        st.success("PDFs processed successfully!")
         
         st.markdown("---")
         st.info("""
@@ -290,7 +208,11 @@ def main():
         - **Context-Aware Chatbot:** Remembers conversation history
         - **PDF Document Chatbot:** Answers questions from uploaded PDFs
         
-        **Note:** You need a Hugging Face API key to use these features.
+        **Popular Models:**
+        - google/flan-t5-xxl (general purpose)
+        - microsoft/DialoGPT-large (conversational)
+        - facebook/blenderbot-400M-distill (conversational)
+        - deepset/roberta-base-squad2 (question answering)
         """)
     
     # Display chat messages
@@ -317,9 +239,16 @@ def main():
                 if st.session_state.feature == "Basic Chatbot":
                     response = basic_chatbot(prompt)
                 elif st.session_state.feature == "Context-Aware Chatbot":
-                    response = context_aware_chatbot(prompt)
+                    # Extract conversation history
+                    conversation_history = "\n".join(
+                        [f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages[:-1]]
+                    )
+                    response = context_aware_chatbot(prompt, conversation_history)
                 else:  # PDF Document Chatbot
-                    response = pdf_chatbot(prompt)
+                    if not st.session_state.pdf_processed:
+                        response = "Please upload and process PDF files first using the sidebar."
+                    else:
+                        response = pdf_chatbot(prompt)
             
             st.markdown(response)
         
